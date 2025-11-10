@@ -1,0 +1,7 @@
+{
+    "rate_type": "sweep",
+    "data": "prompt_tokens=4096,prompt_tokens_stdev=512,prompt_tokens_min=2048,prompt_tokens_max=16000,output_tokens=512,output_tokens_stdev=128,output_tokens_min=1,output_tokens_max=2048",
+    "rate": 20,
+    "max_requests": 1000,
+    "max_seconds": 600
+}

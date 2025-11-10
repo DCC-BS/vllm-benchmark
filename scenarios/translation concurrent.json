@@ -1,0 +1,6 @@
+{
+    "rate_type": "concurrent",
+    "data": "prompt_tokens=1024,prompt_tokens_stdev=256,prompt_tokens_min=1,prompt_tokens_max=2048,output_tokens=1024,output_tokens_stdev=256,output_tokens_min=1,output_tokens_max=2048",
+    "rate": 20,
+    "max_requests": 1000
+}
