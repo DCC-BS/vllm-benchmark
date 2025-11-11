@@ -22,7 +22,7 @@ for scenario in "${scenarios[@]}"; do
     echo "Running benchmark for scenario: $scenario"
     uv run --env-file .env guidellm benchmark run \
         --scenario "./scenarios/$scenario" \
-        --output-path "results/benchmarks.json" \
+        --output-path "results/benchmarks_$scenario.json" \
         --target "$GUIDELLM__OPENAI__BASE_URL"
 done
 
@@ -38,7 +38,7 @@ for (( i=0; i<array_length; i++ )); do
     uv run --env-file .env guidellm benchmark run \
         --scenario "./scenarios/$concurrency_scenario" \
         --rate "$rate" \
-        --output-path "results/benchmarks.json" \
+        --output-path "results/benchmarks_$scenario.json" \
         --target "$GUIDELLM__OPENAI__BASE_URL"
 done
 
