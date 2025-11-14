@@ -28,18 +28,19 @@ done
 
 echo "Starting concurrent scenario benchmarks..."
 
-array_length=${#concurrency_scenarios[@]}
+for concurrency_scenario in "${concurrency_scenarios[@]}"; do
+    # Remove the .json extension for a cleaner file name prefix
+    scenario_prefix="${concurrency_scenario%.json}" 
 
-for (( i=0; i<array_length; i++ )); do
-    concurrency_scenario="${concurrency_scenarios[i]}"
-    rate="${concurrency_rates[i]}"
-
-    echo "Running benchmark for concurrent scenario: $concurrency_scenario with rate: $rate"
-    uv run --env-file .env guidellm benchmark run \
-        --scenario "./scenarios/$concurrency_scenario" \
-        --rate "$rate" \
-        --output-path "results/benchmarks_$concurrency_scenario_$rate.json" \
-        --target "$GUIDELLM__OPENAI__BASE_URL"
+    for rate in "${concurrency_rates[@]}"; do
+        echo "Running benchmark for scenario: $scenario_prefix with rate: $rate"
+        output_path="results/benchmarks_${scenario_prefix}_${rate}.json"
+        uv run --env-file .env guidellm benchmark run \
+            --scenario "./scenarios/$concurrency_scenario" \
+            --rate "$rate" \
+            --output-path "$output_path" \
+            --target "$GUIDELLM__OPENAI__BASE_URL"
+    done
 done
 
 echo "All benchmarks complete."
