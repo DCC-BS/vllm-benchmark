@@ -38,7 +38,7 @@ for (( i=0; i<array_length; i++ )); do
     uv run --env-file .env guidellm benchmark run \
         --scenario "./scenarios/$concurrency_scenario" \
         --rate "$rate" \
-        --output-path "results/benchmarks_$scenario.json" \
+        --output-path "results/benchmarks_$concurrency_scenario_$rate.json" \
         --target "$GUIDELLM__OPENAI__BASE_URL"
 done
 

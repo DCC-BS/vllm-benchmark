@@ -11,4 +11,4 @@ wheels/
 
 # Benchmark results
 benchmarks.csv
-benchmarks.json
+benchmarks*.json
