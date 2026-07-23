@@ -9,6 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
+# Secrets
+.env
+.env.bak
+
 # Benchmark results
+results/*
+!results/.keep
 benchmarks.csv
 benchmarks*.json
