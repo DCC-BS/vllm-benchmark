@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Benchmark runner for guidellm >= 0.7.
+# Benchmark runner for guidellm >= 0.7.2.
 #
 # Usage:
 #   ./run.sh                      # run every scenario
@@ -106,6 +106,8 @@ run_scenario() {
         --output "kind=json,path=results/${name}.json" \
         --output "kind=csv,path=results/${name}.csv" \
         --output "kind=html,path=results/${name}.html" \
+        --output "kind=plot,path=results/${name}.png,dpi=150" \
+        --output "kind=plot,path=results/${name}.svg" \
         "${extra_args[@]}"
 }
 

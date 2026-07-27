@@ -21,7 +21,8 @@
         ],
         "constraints": [
             { "kind": "max_requests", "count": 1000 },
-            { "kind": "max_duration", "seconds": 600 }
+            { "kind": "max_duration", "seconds": 600 },
+            { "kind": "max_global_error_rate", "rate": 0.05, "minimum": 30, "stopping_scope": "all" }
         ]
     }
 }
