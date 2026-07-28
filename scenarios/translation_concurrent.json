@@ -2,6 +2,7 @@
     "spec": {
         "profile": {
             "kind": "concurrent",
+            "rampup_duration": 15,
             "streams": [10, 50, 100, 300],
             "warmup": { "percent": 0.1 },
             "cooldown": { "percent": 0.05 }

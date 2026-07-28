@@ -2,31 +2,32 @@
     "spec": {
         "profile": {
             "kind": "sweep",
+            "max_concurrency": 64,
+            "rampup_duration": 30,
             "sweep_size": 10,
             "warmup": { "percent": 0.1 },
             "cooldown": { "percent": 0.05 }
         },
-        "backend": {
-            "max_tokens": 256
-        },
         "data": [
             {
-                "kind": "huggingface",
-                "source": "lmms-lab/ChartQA",
-                "load_kwargs": { "split": "test", "streaming": true }
-            }
-        ],
-        "data_column_mapper": {
-            "kind": "generative_column_mapper",
-            "column_mappings": {
-                "image_column": "image",
-                "text_column": "question"
-            }
-        },
-        "data_preprocessors": [
+                "kind": "synthetic_text",
+                "prompt_tokens": 128,
+                "prompt_tokens_stdev": 32,
+                "prompt_tokens_min": 1,
+                "prompt_tokens_max": 512,
+                "output_tokens": 256,
+                "output_tokens_stdev": 64,
+                "output_tokens_min": 1,
+                "output_tokens_max": 1024
+            },
             {
-                "kind": "encode_media",
-                "image_kwargs": { "max_size": 896 }
+                "kind": "synthetic_image",
+                "width": 896,
+                "height": 896,
+                "format": "jpeg",
+                "jpeg_quality": 85,
+                "content": "gradient",
+                "images_per_request": 1
             }
         ],
         "constraints": [

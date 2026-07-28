@@ -2,6 +2,8 @@
     "spec": {
         "profile": {
             "kind": "sweep",
+            "max_concurrency": 128,
+            "rampup_duration": 30,
             "sweep_size": 10,
             "warmup": { "percent": 0.1 },
             "cooldown": { "percent": 0.05 }

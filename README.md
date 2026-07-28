@@ -4,7 +4,7 @@ Load benchmarks for our vLLM deployments, driven by
 [guidellm](https://github.com/vllm-project/guidellm) `>= 0.7.2`.
 
 Covers text workloads (chat, RAG, translation) and vision workloads that send
-real or generated images through `/v1/chat/completions`.
+synthetic images through `/v1/chat/completions`.
 
 ## Setup
 
@@ -25,12 +25,23 @@ cp .env.example .env   # then fill in the values
 | `BENCH_VERIFY` | Verify the server TLS certificate. `false` for self-signed certs. |
 | `HF_TOKEN` | Needed for gated tokenizers such as `google/gemma-*`. |
 
+Resilience knobs, all optional (see [When the endpoint falls
+over](#when-the-endpoint-falls-over)):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BENCH_HEALTH_PATH` | `health` | Health route, relative to `BENCH_TARGET`. Same route guidellm validates against. |
+| `BENCH_HEALTH_TIMEOUT` | `900` | Seconds to wait for the endpoint to come back before giving up on the run. |
+| `BENCH_HEALTH_INTERVAL` | `15` | Seconds between health polls. |
+| `BENCH_RETRIES` | `2` | Extra attempts per scenario after a failure. |
+| `BENCH_RETRY_DELAY` | `60` | Seconds to let the server settle before a retry. |
+| `BENCH_SCENARIO_PAUSE` | `30` | Seconds to drain between scenarios. |
+
 ## Running
 
 ```bash
 ./run.sh                    # every scenario
 ./run.sh chat vision        # only the named scenarios
-./run.sh vision_synthetic   # scenarios outside the default set, by name
 SCENARIOS="rag" ./run.sh    # same, via environment
 
 # extra guidellm flags after `--`, useful for a quick dry run
@@ -56,16 +67,11 @@ uv run guidellm export results/chat.json --output kind=plot,path=results/chat.pd
 | `chat` | synthetic, ~512 in / ~256 out | sweep (10 rates) |
 | `rag` | synthetic, ~4096 in / ~512 out | sweep |
 | `translation` | synthetic, ~1024 in / ~1024 out | sweep |
-| `vision` | `lmms-lab/ChartQA` images + questions | sweep |
+| `vision` | synthetic 896×896 JPEG + ~128 in / ~256 out | sweep |
 | `chat_concurrent` | same as `chat` | concurrent, streams 10/50/100/300 |
 | `rag_concurrent` | same as `rag` | concurrent, streams 10/50/100/300 |
 | `translation_concurrent` | same as `translation` | concurrent, streams 10/50/100/300 |
 | `vision_concurrent` | same as `vision` | concurrent, streams 10/50/100/300 |
-| `vision_synthetic` | synthetic 896×896 JPEG + ~128 in / ~256 out | sweep |
-| `vision_synthetic_concurrent` | same as `vision_synthetic` | concurrent, streams 10/50/100/300 |
-
-The `vision_synthetic*` scenarios are not part of the default run — pass them by
-name. See [Vision workload](#vision-workload).
 
 The sweep scenarios carry an `over_saturation` constraint in `monitor` mode, so
 the report flags the point where the server stops keeping up instead of only
@@ -82,14 +88,42 @@ sweep at the saturation point rather than only flagging it.
 
 Warmup (10%) and cooldown (5%) phases are excluded from the reported metrics.
 
+### Concurrency ceilings and ramp-up
+
+The sweep profile's second stage is `throughput`, which by default fires
+`max_concurrency: 512` requests at once, at `t=0`. Behind a gateway that is a
+connection storm, not a load test — the endpoint answers `503`, every guidellm
+worker fails its startup `GET /health`, and the process dies with
+`Worker process group startup failed` before writing any output.
+
+So the sweep scenarios pin a lower ceiling: `max_concurrency: 128` for text,
+`64` for vision (image requests carry far more bytes and prefill per request).
+All scenarios also set `rampup_duration` — 30s for sweeps, 15s for the
+concurrent ones — which spreads the initial burst linearly instead of opening
+every stream simultaneously.
+
+Raise the ceiling when the deployment can take it; the numbers are the point at
+which our gateway broke, not a property of the model.
+
+### When the endpoint falls over
+
+A load stage can knock the endpoint over, and it stays down for longer than the
+scenario that caused it. `run.sh` therefore:
+
+1. Polls `BENCH_TARGET/health` before every scenario **and** before every retry,
+   so guidellm is never started against a server that is still returning `503`.
+2. Retries a failed scenario `BENCH_RETRIES` times, waiting `BENCH_RETRY_DELAY`
+   between attempts.
+3. Pauses `BENCH_SCENARIO_PAUSE` between scenarios to let the server drain.
+4. Aborts the remaining scenarios once the endpoint fails to recover within
+   `BENCH_HEALTH_TIMEOUT`, listing them as skipped instead of burning each one
+   on the same dead endpoint.
+
+Exit code is 1 when anything failed or was skipped.
+
 ## Vision workload
 
-Two flavours: real images from a Hugging Face dataset (`vision*`) and generated
-images (`vision_synthetic*`, guidellm >= 0.7.2).
-
-### Synthetic images
-
-`vision_synthetic*` combine two data sources into one request stream — a
+`vision*` scenarios combine two data sources into one request stream — a
 `synthetic_text` source for the prompt and output-token target, and a
 `synthetic_image` source for the image. No dataset download, no gated repo, and
 the image resolution is exact:
@@ -106,24 +140,3 @@ produces far larger JPEGs, so use it to put wire/decode cost into the picture.
 `width`/`height`. Because the token target comes from the `synthetic_text`
 source, these scenarios need no `backend.max_tokens` pin. `synthetic_video` is
 available too, for backends that accept video input.
-
-### Hugging Face images
-
-`vision*` send real chart images. The pipeline is:
-
-1. `data` — `lmms-lab/ChartQA`, streamed (no full download).
-2. `data_column_mapper` — `image` → `image_column`, `question` → `text_column`.
-3. `data_preprocessors: encode_media` — images resized to `max_size: 896` and
-   base64-encoded into the chat message.
-
-`max_size: 896` matches Gemma's vision encoder resolution, so one image maps to
-a predictable number of image tokens. Raise or lower it to change the image
-token cost per request. The reports gain an **Image Metrics** table with input
-pixels and bytes per request.
-
-To swap in a different dataset, the column must be a plain string. Datasets with
-list-valued text columns (e.g. `lmms-lab/flickr30k`, whose `caption` is a list of
-five strings) fail in the column mapper.
-
-`vision*.json` pin `backend.max_tokens: 256` because a Hugging Face dataset
-carries no output-token target, unlike the synthetic scenarios.
