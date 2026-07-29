@@ -36,6 +36,18 @@ over](#when-the-endpoint-falls-over)):
 | `BENCH_RETRIES` | `2` | Extra attempts per scenario after a failure. |
 | `BENCH_RETRY_DELAY` | `60` | Seconds to let the server settle before a retry. |
 | `BENCH_SCENARIO_PAUSE` | `30` | Seconds to drain between scenarios. |
+| `BENCH_RATE_LIMIT_DELAY` | `60` | Back-off when the health probe answers `429` instead of `5xx`. |
+| `BENCH_RESULT_DIR` | `results/<date>_<target>` | Output directory override. |
+| `BENCH_VALIDATE_BACKEND` | `false` | Let guidellm health-check the backend from every worker process. |
+
+Behind a request rate limit, `BENCH_VALIDATE_BACKEND=true` is what breaks runs:
+guidellm calls `GET /health` from each of its worker processes
+(`max_worker_processes`, default 10) at *every* scheduler startup — once per
+sweep stage — and a single `429` there aborts the whole worker group with
+`Backend validation request failed`. The script's own health gate probes the
+same route once per scenario, so the per-worker check is disabled by default.
+Cutting `GUIDELLM__MAX_WORKER_PROCESSES` lowers that burst if you need to keep
+validation on.
 
 ## Running
 
@@ -48,7 +60,11 @@ SCENARIOS="rag" ./run.sh    # same, via environment
 ./run.sh chat -- --profile kind=sweep,sweep_size=2 --constraint kind=max_requests,count=20
 ```
 
-Each scenario writes `results/<scenario>.{json,csv,html,png,svg}`. The HTML
+Each scenario writes `results/<YYYYMMDD>_<target-slug>/<scenario>.{json,csv,html,png,svg}`,
+e.g. `results/20260729_api_kdkp_intranet_bs_ch_kis_gemma4/chat.json`. The
+date+target subdir keeps parallel runs (two shells, different `.env`) and
+reruns on later days from overwriting each other; override with
+`BENCH_RESULT_DIR`. The HTML
 report is the interactive guidellm UI; the PNG (150 dpi) and SVG are static
 plots of the same benchmark series, handy for slides and PRs. Runs are tagged
 with `scenario`, `model` and a UTC `run` timestamp label, which land in the
@@ -57,7 +73,8 @@ reports.
 Re-export an existing run into another format without re-benchmarking:
 
 ```bash
-uv run guidellm export results/chat.json --output kind=plot,path=results/chat.pdf
+uv run guidellm export results/20260729_api_kdkp_intranet_bs_ch_kis_gemma4/chat.json \
+    --output kind=plot,path=results/chat.pdf
 ```
 
 ## Scenarios

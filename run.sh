@@ -18,6 +18,9 @@ set -euo pipefail
 #   BENCH_RETRIES         extra attempts per scenario after a failure (default: 2)
 #   BENCH_RETRY_DELAY     seconds to let the server settle before a retry (default: 60)
 #   BENCH_SCENARIO_PAUSE  seconds to drain between scenarios (default: 30)
+#   BENCH_RESULT_DIR      output dir (default: results/YYYYMMDD_<target-slug>)
+#   BENCH_RATE_LIMIT_DELAY  seconds to back off on a 429 health probe (default: 60)
+#   BENCH_VALIDATE_BACKEND  let guidellm health-check per worker (default: false)
 
 if [ -f .env ]; then
     echo "Loading environment variables from .env"
@@ -54,6 +57,12 @@ BENCH_HEALTH_INTERVAL="${BENCH_HEALTH_INTERVAL:-15}"
 BENCH_RETRIES="${BENCH_RETRIES:-2}"
 BENCH_RETRY_DELAY="${BENCH_RETRY_DELAY:-60}"
 BENCH_SCENARIO_PAUSE="${BENCH_SCENARIO_PAUSE:-30}"
+BENCH_RATE_LIMIT_DELAY="${BENCH_RATE_LIMIT_DELAY:-60}"
+# guidellm re-validates /health from every worker process (default 10) at every
+# scheduler startup, i.e. once per sweep stage. Behind a request rate limit that
+# burst 429s and kills the whole worker group, so it is off by default: the
+# health gate below already checks the same route once per scenario.
+BENCH_VALIDATE_BACKEND="${BENCH_VALIDATE_BACKEND:-false}"
 
 # --- shared curl auth arguments --------------------------------------------
 auth_args=()
@@ -78,6 +87,14 @@ wait_for_health() {
             echo "Endpoint still unhealthy (HTTP $code) after ${BENCH_HEALTH_TIMEOUT}s: $health_url" >&2
             return 1
         fi
+        # 429 means the server is alive but the rate-limit budget is still burnt
+        # from the previous stage; starting now would only 429 the load itself,
+        # so back off harder than for a plain 5xx instead of hammering.
+        if [ "$code" = "429" ]; then
+            echo "Rate limited on $health_url (HTTP 429), backing off ${BENCH_RATE_LIMIT_DELAY}s ..."
+            sleep "$BENCH_RATE_LIMIT_DELAY"
+            continue
+        fi
         echo "Waiting for $health_url to recover (HTTP $code), retrying in ${BENCH_HEALTH_INTERVAL}s ..."
         sleep "$BENCH_HEALTH_INTERVAL"
     done
@@ -101,7 +118,7 @@ fi
 BENCH_TOKENIZER="${BENCH_TOKENIZER:-$BENCH_MODEL}"
 
 # --- build the shared backend argument string ------------------------------
-backend_arg="kind=openai_http,target=${BENCH_TARGET},model=${BENCH_MODEL},verify=${BENCH_VERIFY:-false}"
+backend_arg="kind=openai_http,target=${BENCH_TARGET},model=${BENCH_MODEL},verify=${BENCH_VERIFY:-false},validate_backend=${BENCH_VALIDATE_BACKEND}"
 if [ -n "${BENCH_API_KEY:-}" ]; then
     backend_arg+=",api_key=${BENCH_API_KEY}"
 fi
@@ -123,7 +140,16 @@ else
     selected=("${sweep_scenarios[@]}" "${concurrent_scenarios[@]}")
 fi
 
-mkdir -p results
+# --- results directory -----------------------------------------------------
+# One subdir per day + target so parallel runs (different .env, same checkout)
+# and reruns on later days never overwrite each other's artifacts.
+target_slug=$(printf '%s' "${BENCH_TARGET%/}" \
+    | sed -e 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##' \
+          -e 's#[^a-zA-Z0-9]\{1,\}#_#g' \
+          -e 's#^_##' -e 's#_$##')
+RESULT_DIR="${BENCH_RESULT_DIR:-results/$(date +%Y%m%d)_${target_slug}}"
+mkdir -p "$RESULT_DIR"
+echo "Writing results to $RESULT_DIR"
 
 invoke_guidellm() {
     local name="$1"
@@ -136,11 +162,11 @@ invoke_guidellm() {
         --label "scenario=${name}" \
         --label "model=${BENCH_MODEL}" \
         --label "$run_label" \
-        --output "kind=json,path=results/${name}.json" \
-        --output "kind=csv,path=results/${name}.csv" \
-        --output "kind=html,path=results/${name}.html" \
-        --output "kind=plot,path=results/${name}.png,dpi=150" \
-        --output "kind=plot,path=results/${name}.svg" \
+        --output "kind=json,path=${RESULT_DIR}/${name}.json" \
+        --output "kind=csv,path=${RESULT_DIR}/${name}.csv" \
+        --output "kind=html,path=${RESULT_DIR}/${name}.html" \
+        --output "kind=plot,path=${RESULT_DIR}/${name}.png,dpi=150" \
+        --output "kind=plot,path=${RESULT_DIR}/${name}.svg" \
         ${extra_args[@]+"${extra_args[@]}"}
 }
 
@@ -217,4 +243,4 @@ if [ ${#failed[@]} -gt 0 ]; then
     echo "Completed with failures: ${failed[*]}"
     exit 1
 fi
-echo "All benchmarks complete. Results in ./results"
+echo "All benchmarks complete. Results in ./${RESULT_DIR}"
