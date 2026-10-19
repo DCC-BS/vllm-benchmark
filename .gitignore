@@ -18,3 +18,7 @@ results/*
 !results/.keep
 benchmarks.csv
 benchmarks*.json
+
+# Local-only material (internal hosts, results). Never commit.
+private/
+BENCHMARK_SUMMARY.md
